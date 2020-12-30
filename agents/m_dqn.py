@@ -24,7 +24,9 @@ from dopamine.agents.dqn import dqn_agent
 import gin
 import tensorflow.compat.v1 as tf
 
-from munchausen_rl.common import utils
+#from munchausen_rl.common import utils
+import utils
+
 
 tf.disable_v2_behavior()
 
