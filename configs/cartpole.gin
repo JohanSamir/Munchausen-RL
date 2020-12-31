@@ -19,14 +19,25 @@ MunchausenDQNAgent.tf_device = '/cpu:*'  # use '/cpu:*' for non-GPU version
 MunchausenDQNAgent.optimizer_type = 'adam'
 MunchausenDQNAgent.optimizer_lr = 0.001
 
+MunchausenDQNAgent.tau = 0.03
+MunchausenDQNAgent.alpha = 1 # 1st 0.9
+MunchausenDQNAgent.clip_value_min = -10 # 1st -1
+MunchausenDQNAgent.interact = 'greedy'
 
-dqn/tf.train.AdamOptimizer.learning_rate = 0.001
-dqn/tf.train.AdamOptimizer.epsilon = 0.0003125
+#dqn/tf.train.AdamOptimizer.learning_rate = 0.001
+#dqn/tf.train.AdamOptimizer.epsilon = 0.0003125
+create_optimizer = @dqn_agent.create_optimizer
+create_optimizer.learning_rate = 0.001
+create_optimizer.eps = 3.125e-4
 
-Runner.num_iterations = 500
+create_gym_environment.environment_name = 'CartPole'
+create_gym_environment.version = 'v0'
+TrainRunner.create_environment_fn = @gym_lib.create_gym_environment
+
+Runner.num_iterations = 30#500
 Runner.training_steps = 1000
-Runner.evaluation_steps = 1000
-Runner.max_steps_per_episode = 500
+#Runner.evaluation_steps = 1000
+Runner.max_steps_per_episode = 200#500
 
 WrappedReplayBuffer.replay_capacity = 50000
 WrappedReplayBuffer.batch_size = 128
