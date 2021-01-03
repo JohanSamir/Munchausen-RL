@@ -19,10 +19,23 @@
 The class MunchausenDQNAgent inherits from Dopamine's DQNAgent.
 """
 
-import random
-from dopamine.agents.dqn import dqn_agent
+#import random
+#from dopamine.agents.dqn import dqn_agent
+#import gin
+#import tensorflow.compat.v1 as tf
+
+
+import functools
+from dopamine.jax import networks
+from dopamine.jax.agents.dqn import dqn_agent
+from dopamine.replay_memory import prioritized_replay_buffer
+from flax import nn 
 import gin
+import jax
+import jax.numpy as jnp
+#import tensorflow as tf
 import tensorflow.compat.v1 as tf
+
 
 #from munchausen_rl.common import utils
 import utils
@@ -32,11 +45,10 @@ tf.disable_v2_behavior()
 
 
 @gin.configurable
-class MunchausenDQNAgent(dqn_agent.DQNAgent):
+class MunchausenDQNAgentNew(dqn_agent.JaxDQNAgent):
   """An implementation of the Munchausen-DQN agent."""
 
   def __init__(self,
-               sess,
                num_actions,
                tau,
                alpha=1,
@@ -68,25 +80,17 @@ class MunchausenDQNAgent(dqn_agent.DQNAgent):
     self.alpha = alpha
     self.clip_value_min = clip_value_min
     self._interact = interact
-    self.optimizer_type = optimizer_type
-    self.optimizer_lr = optimizer_lr
+    #self.optimizer_type = optimizer_type
+    #self.optimizer_lr = optimizer_lr
+    self._optimizer_name = optimizer
     self.optimizer = self._build_optimizer()
 
-    super(MunchausenDQNAgent, self).__init__(sess, num_actions, **kwargs)
+    super(MunchausenDQNAgent, self).__init__(num_actions, **kwargs)
 
   def _build_optimizer(self):
     """Creates the optimizer for the Q-networks."""
-    if self.optimizer_type == 'adam':
-      return tf.train.AdamOptimizer(
-          learning_rate=self.optimizer_lr, epsilon=0.0003125)
-    if self.optimizer_type == 'rms':
-      return tf.train.RMSPropOptimizer(
-          learning_rate=self.optimizer_lr,
-          decay=0.95,
-          momentum=0.0,
-          epsilon=0.00001,
-          centered=True)
-    raise ValueError('Undefined optimizer')
+    return create_optimizer(self._optimizer_name)
+    #raise ValueError('Undefined optimizer')
 
   def _build_networks(self):
     """Builds the Q-value network computations needed for acting and training.
@@ -112,7 +116,7 @@ class MunchausenDQNAgent(dqn_agent.DQNAgent):
 
     self._net_outputs = self.online_convnet(self.state_ph)
 
-    self._q_argmax = tf.argmax(self._net_outputs.q_values, axis=1)[0]
+    self._q_argmax = jnp.argmax(self._net_outputs.q_values, axis=1)[0]
     self._replay_net_outputs = self.online_convnet(
         self._replay.states)
     self._replay_next_net_outputs = self.online_convnet(
