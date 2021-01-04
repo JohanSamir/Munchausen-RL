@@ -25,16 +25,19 @@ import jax
 import jax.numpy as jnp
 import numpy as onp
 import tensorflow as tf
+import utils
+
 
 
 def mse_loss(targets, predictions):
   return jnp.mean(jnp.power((targets - (predictions)),2))
 
 
-@functools.partial(jax.jit, static_argnums=(7,8,9))
+#@functools.partial(jax.jit, static_argnums=(7,8,9,10,11,12,13))
 def train(target_network, optimizer, states, actions, next_states, rewards,
-          terminals, cumulative_gamma,double_dqn, mse_inf,tau,alpha,clip_value_min):
+          terminals, cumulative_gamma,double_dqn, mse_inf,tau,alpha,clip_value_min,num_actions):
   """Run the training step."""
+  print('ACTIONS 555',num_actions)
   def loss_fn(model, target, mse_inf):
     q_values = jax.vmap(model, in_axes=(0))(states).q_values
     q_values = jnp.squeeze(q_values)
@@ -52,7 +55,7 @@ def train(target_network, optimizer, states, actions, next_states, rewards,
   if double_dqn:
     #target = target_DDQN(optimizer, target_network, next_states, rewards,  terminals, cumulative_gamma)
     target=target_m_dqn(optimizer,target_network,states,next_states,actions,rewards,terminals,
-                cumulative_gamma,tau,alpha,clip_value_min)
+                cumulative_gamma,tau,alpha,clip_value_min,num_actions)
   else:
     target = dqn_agent.target_q(target_network, next_states, rewards,  terminals, cumulative_gamma) 
 
@@ -76,7 +79,9 @@ def target_DDQN(model, target_network, next_states, rewards, terminals, cumulati
                                (1. - terminals))
 
 def target_m_dqn(model, target_network, states, next_states, actions,rewards, terminals, 
-                cumulative_gamma,tau,alpha,clip_value_min):
+                cumulative_gamma,tau,alpha,clip_value_min,num_actions):
+
+  print('ACTIONS 666',num_actions)
   """Compute the target Q-value.
   model -> Online: For computing the current state's Q-values.
   target_network: For computing the next state's target Q-values.
@@ -87,11 +92,11 @@ def target_m_dqn(model, target_network, states, next_states, actions,rewards, te
   #_net_outputs = jnp.squeeze(_net_outputs_v)
   #_q_argmax = jnp.argmax(_net_outputs, axis=1)
 
-  _replay_net_outputs = jax.vmap(model.target, in_axes=(0))(states).q_values
-  _replay_net_outputs = jnp.squeeze(_replay_net_outputs)
+  #_replay_net_outputs = jax.vmap(model.target, in_axes=(0))(states).q_values
+  #_replay_net_outputs = jnp.squeeze(_replay_net_outputs)
 
-  _replay_next_net_outputs= jax.vmap(model.target, in_axes=(0))(next_states).q_values
-  _replay_next_net_outputs = jnp.squeeze(_replay_next_net_outputs)
+  #_replay_next_net_outputs= jax.vmap(model.target, in_axes=(0))(next_states).q_values
+  #_replay_next_net_outputs = jnp.squeeze(_replay_next_net_outputs)
 
   _replay_target_net_outputs = jax.vmap(target_network, in_axes=(0))(states).q_values
   _replay_target_net_outputs = jnp.squeeze(_replay_target_net_outputs)
@@ -114,35 +119,63 @@ def target_m_dqn(model, target_network, states, next_states, actions,rewards, te
   """
 
   #replay_action_one_hot = tf.one_hot(self._replay.actions, self.num_actions, 1., 0., name='action_one_hot')
-  replay_action_one_hot = jax.nn.one_hot(actions, self.num_actions, 1., 0., name='action_one_hot')
+  print('clip_value_min---------',clip_value_min)
+  print('num_actions---------',num_actions)
+  replay_action_one_hot = jax.nn.one_hot(actions, num_actions)
+  print('----------------------------------------------------------------------------')
+  print('replay_action_one_hot:',replay_action_one_hot,replay_action_one_hot.shape)
+
 
   # tau * ln pi_k+1 (s')
   replay_next_log_policy = utils.stable_scaled_log_softmax(
-      _replay_next_target_net_outputs.q_values, self.tau, axis=1)
+      _replay_next_target_net_outputs, tau, axis=1)
+  print('----------------------------------------------------------------------------')
+  print('replay_next_log_policy:',replay_next_log_policy,replay_next_log_policy.shape)
   
   # tau * ln pi_k+1(s)
   replay_log_policy = utils.stable_scaled_log_softmax(
-      _replay_target_net_outputs.q_values, self.tau, axis=1)
+      _replay_target_net_outputs, tau, axis=1)
   
   # pi_k+1(s')
   replay_next_policy = utils.stable_softmax(
-      _replay_next_target_net_outputs.q_values, self.tau, axis=1)
+      _replay_next_target_net_outputs, tau, axis=1)
+
+  print('----------------------------------------------------------------------------')
+  print('replay_next_policy:',replay_next_policy,replay_next_policy.shape)
+  print('----------------------------------------------------------------------------')
+  print('_replay_next_target_net_outputs.q_values:',_replay_next_target_net_outputs,_replay_next_target_net_outputs.shape) 
 
   #W = [Q(S',a')- tau * ln pi_k+1 (s')] *  pi_k+1(s')
-  replay_next_qt_softmax = tf.reduce_sum(
-      (_replay_next_target_net_outputs.q_values -
-       replay_next_log_policy) * replay_next_policy, 1).numpy()
+  replay_next_qt_softmax = jnp.sum((_replay_next_target_net_outputs -
+       replay_next_log_policy) * replay_next_policy, 1)
+
+  print('----------------------------------------------------------------------------')
+  print('replay_next_qt_softmax:',replay_next_qt_softmax,replay_next_qt_softmax.shape)
+
+  print('----------------------------------------------------------------------------')
+  print('replay_log_policy-XXX:',replay_log_policy,replay_log_policy.shape)
+
+  print('----------------------------------------------------------------------------')
+  print('replay_action_one_hot_XXX:',replay_action_one_hot,replay_action_one_hot.shape)
 
   # tau * ln pi_k+1(a|s)
-  tau_log_pi_a = tf.reduce_sum(replay_log_policy * replay_action_one_hot, axis=1).numpy()
+  tau_log_pi_a = jnp.sum(replay_log_policy * replay_action_one_hot, axis=1)
+  print('----------------------------------------------------------------------------')
+  print('tau_log_pi_a:',tau_log_pi_a,tau_log_pi_a.shape)
 
   #clipping
-  tau_log_pi_a = jnp.clip(tau_log_pi_a, clip_value_min=self.clip_value_min,clip_value_max=1)
+  tau_log_pi_a = jnp.clip(tau_log_pi_a, a_min=clip_value_min,a_max=1)
 
-  munchausen_term = self.alpha * tau_log_pi_a
-  modified_bellman = (rewards + munchausen_term + cumulative_gamma * replay_next_qt_softmax *
-      * (1. - terminals))
+  print('----------------------------------------------------------------------------')
+  print('tau_log_pi_a:',tau_log_pi_a,tau_log_pi_a.shape)
 
+  munchausen_term = alpha * tau_log_pi_a
+  print('----------------------------------------------------------------------------')
+  print('munchausen_term:',munchausen_term,munchausen_term.shape)
+
+  modified_bellman = (rewards + munchausen_term + cumulative_gamma * replay_next_qt_softmax * (1. - terminals))
+  print('----------------------------------------------------------------------------')
+  print('modified_bellman:',modified_bellman,modified_bellman.shape)
   return jax.lax.stop_gradient(modified_bellman)
 
 @gin.configurable
@@ -223,6 +256,7 @@ class JaxDQNAgentNew(dqn_agent.JaxDQNAgent):
     self._dueling = dueling
     self._double_dqn = double_dqn
     self._mse_inf = mse_inf
+    print('ACTIONS 222',num_actions)
 
     super(JaxDQNAgentNew, self).__init__(
         num_actions= num_actions,
@@ -237,6 +271,9 @@ class JaxDQNAgentNew(dqn_agent.JaxDQNAgent):
         optimizer=optimizer,
         epsilon_fn=dqn_agent.identity_epsilon if self._noisy == True else epsilon_fn)
 
+    print('ACTIONS 333',num_actions)
+    self._num_actions=num_actions
+    print('ACTIONS 444',self._num_actions)
     self._prioritized=prioritized
     self._rng = jax.random.PRNGKey(0)
     state_shape = self.observation_shape + (self.stack_size,)
@@ -283,7 +320,8 @@ class JaxDQNAgentNew(dqn_agent.JaxDQNAgent):
                                      self._mse_inf,
                                      self._tau,
                                      self._alpha,
-                                     self._clip_value_min)
+                                     self._clip_value_min,
+                                     self._num_actions)
         if self._prioritized == 'prioritized':
           # The original prioritized experience replay uses a linear exponent
           # schedule 0.4 -> 1.0. Comparing the schedule to a fixed exponent of
