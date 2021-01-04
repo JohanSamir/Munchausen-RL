@@ -23,7 +23,7 @@ import random
 from dopamine.agents.dqn import dqn_agent
 import gin
 import tensorflow.compat.v1 as tf
-
+import sys
 #from munchausen_rl.common import utils
 import utils
 
@@ -111,17 +111,13 @@ class MunchausenDQNAgent(dqn_agent.DQNAgent):
     self.target_convnet = self._create_network(name='Target')
 
     self._net_outputs = self.online_convnet(self.state_ph)
-
     self._q_argmax = tf.argmax(self._net_outputs.q_values, axis=1)[0]
-    self._replay_net_outputs = self.online_convnet(
-        self._replay.states)
-    self._replay_next_net_outputs = self.online_convnet(
-        self._replay.next_states)
+    
+    self._replay_net_outputs = self.online_convnet(self._replay.states)
+    self._replay_next_net_outputs = self.online_convnet(self._replay.next_states)
 
-    self._replay_target_net_outputs = self.target_convnet(
-        self._replay.states)
-    self._replay_next_target_net_outputs = self.target_convnet(
-        self._replay.next_states)
+    self._replay_target_net_outputs = self.target_convnet(self._replay.states)
+    self._replay_next_target_net_outputs = self.target_convnet(self._replay.next_states)
 
     self._policy_logits = utils.stable_scaled_log_softmax(
         self._net_outputs.q_values, self.tau, axis=1) / self.tau
@@ -139,33 +135,88 @@ class MunchausenDQNAgent(dqn_agent.DQNAgent):
     """
     replay_action_one_hot = tf.one_hot(
         self._replay.actions, self.num_actions, 1., 0., name='action_one_hot')
+    print('----------------------------------------------------------------------------')
+    print('replay_action_one_hot:',replay_action_one_hot,replay_action_one_hot.shape)
+    print('replay_action_one_hot: make_ndarray',tf.make_ndarray(replay_action_one_hot))
+    print('replay_action_one_hot: make_ndarray',replay_action_one_hot.numpy())
+
+
+    #tf.print('replay_action_one_hot:',replay_action_one_hot,replay_action_one_hot.shape)
     # tau * ln pi_k+1 (s')
     replay_next_log_policy = utils.stable_scaled_log_softmax(
         self._replay_next_target_net_outputs.q_values, self.tau, axis=1)
+    print('----------------------------------------------------------------------------')
+    print('replay_next_log_policy:',replay_next_log_policy,replay_next_log_policy.shape)
+    #tf.print('replay_next_log_policy:',replay_next_log_policy,replay_next_log_policy.shape)
+
+
     # tau * ln pi_k+1(s)
     replay_log_policy = utils.stable_scaled_log_softmax(
         self._replay_target_net_outputs.q_values, self.tau, axis=1)
+
     replay_next_policy = utils.stable_softmax(  # pi_k+1(s')
         self._replay_next_target_net_outputs.q_values, self.tau, axis=1)
+
+    print('----------------------------------------------------------------------------')
+    print('replay_next_policy:',replay_next_policy,replay_next_policy.shape)
+    #tf.print('replay_next_policy:',replay_next_policy,replay_next_policy.shape)
+    
+    print('----------------------------------------------------------------------------')
+    print('_replay_next_target_net_outputs.q_values:',self._replay_next_target_net_outputs.q_values,self._replay_next_target_net_outputs.q_values.shape)
+    #tf.print('_replay_next_target_net_outputs.q_values:',self._replay_next_target_net_outputs.q_values,self._replay_next_target_net_outputs.q_values.shape)
 
     replay_next_qt_softmax = tf.reduce_sum(
         (self._replay_next_target_net_outputs.q_values -
          replay_next_log_policy) * replay_next_policy, 1)
 
+    print('----------------------------------------------------------------------------')
+    print('replay_next_qt_softmax:',replay_next_qt_softmax,replay_next_qt_softmax.shape)
+
+
     tau_log_pi_a = tf.reduce_sum(  # tau * ln pi_k+1(a|s)
         replay_log_policy * replay_action_one_hot, axis=1)
+    print('----------------------------------------------------------------------------')
+    print('replay_log_policy-XXX:',replay_log_policy,replay_log_policy.shape)
+
+    print('----------------------------------------------------------------------------')
+    print('replay_action_one_hot_XXX:',replay_action_one_hot,replay_action_one_hot.shape)
+
+    print('----------------------------------------------------------------------------')
+    print('tau_log_pi_a:',tau_log_pi_a,tau_log_pi_a.shape)
+    #tf.print(tau_log_pi_a)
+    #tf.print('tau_log_pi_a:',tau_log_pi_a,tau_log_pi_a.shape)
 
     tau_log_pi_a = tf.clip_by_value(
         tau_log_pi_a,
         clip_value_min=self.clip_value_min,
-        clip_value_max=1)
+        clip_value_max=1)#(original value)
+        #clip_value_max=0)
+    print('----------------------------------------------------------------------------')
+    print('tau_log_pi_a:',tau_log_pi_a,tau_log_pi_a.shape)
+    #tf.print('tau_log_pi_a:',tau_log_pi_a,tau_log_pi_a.shape)
 
     munchausen_term = self.alpha * tau_log_pi_a
+    print('----------------------------------------------------------------------------')
+    print('munchausen_term:',munchausen_term,munchausen_term.shape)
+    #tf.print('munchausen_term:',munchausen_term,munchausen_term.shape)
+
 
     modified_bellman = (
         self._replay.rewards + munchausen_term +
         self.cumulative_gamma * replay_next_qt_softmax *
         (1. - tf.cast(self._replay.terminals, tf.float32)))
+
+    print('----------------------------------------------------------------------------')
+    #tf.print(modified_bellman)
+    print('modified_bellman:', modified_bellman,modified_bellman.shape)
+    print('----------------------------------------------------------------------------')
+
+    #print(tf.make_ndarray(modified_bellman))
+    #print(tf.make_tensor_proto(modified_bellman))
+    #tf.print(modified_bellman,output_stream=sys.stderr)
+    #tf.Print(modified_bellman,[modified_bellman],"Values")
+    #,modified_bellman.shape)
+
 
     if self.summary_writer is not None:
       with tf.variable_scope('policy'):
