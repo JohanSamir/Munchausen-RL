@@ -36,7 +36,6 @@ import jax.numpy as jnp
 #import tensorflow as tf
 import tensorflow.compat.v1 as tf
 
-
 #from munchausen_rl.common import utils
 import utils
 
@@ -54,9 +53,8 @@ class MunchausenDQNAgentNew(dqn_agent.JaxDQNAgent):
                alpha=1,
                clip_value_min=-10,
                interact='greedy',
-               optimizer_type='adam',
-               optimizer_lr=0.00005,
-               **kwargs):
+               optimizer='adam',
+               create_optimi=dqn_agent.create_optimizer):
     """Initializes the agent and constructs the components of its graph.
 
     About tau and alpha coefficients:
@@ -83,13 +81,15 @@ class MunchausenDQNAgentNew(dqn_agent.JaxDQNAgent):
     #self.optimizer_type = optimizer_type
     #self.optimizer_lr = optimizer_lr
     self._optimizer_name = optimizer
+    #self.create_optimizer()
+    self.create_optimi = create_optimi
     self.optimizer = self._build_optimizer()
 
-    super(MunchausenDQNAgent, self).__init__(num_actions, **kwargs)
+    super(MunchausenDQNAgentNew, self).__init__(num_actions)
 
   def _build_optimizer(self):
     """Creates the optimizer for the Q-networks."""
-    return create_optimizer(self._optimizer_name)
+    return self.create_optimi(self._optimizer_name)
     #raise ValueError('Undefined optimizer')
 
   def _build_networks(self):
@@ -115,25 +115,16 @@ class MunchausenDQNAgentNew(dqn_agent.JaxDQNAgent):
     self.target_convnet = self._create_network(name='Target')
 
     self._net_outputs = self.online_convnet(self.state_ph)
-
     self._q_argmax = jnp.argmax(self._net_outputs.q_values, axis=1)[0]
-    self._replay_net_outputs = self.online_convnet(
-        self._replay.states)
-    self._replay_next_net_outputs = self.online_convnet(
-        self._replay.next_states)
 
-    self._replay_target_net_outputs = self.target_convnet(
-        self._replay.states)
-    self._replay_next_target_net_outputs = self.target_convnet(
-        self._replay.next_states)
+    self._replay_net_outputs = self.online_convnet(self._replay.states)
+    self._replay_next_net_outputs = self.online_convnet(self._replay.next_states)
 
-    self._policy_logits = utils.stable_scaled_log_softmax(
-        self._net_outputs.q_values, self.tau, axis=1) / self.tau
+    self._replay_target_net_outputs = self.target_convnet(self._replay.states)
+    self._replay_next_target_net_outputs = self.target_convnet(self._replay.next_states)
 
-    self._stochastic_action = tf.random.categorical(
-        self._policy_logits,
-        num_samples=1,
-        dtype=tf.int32)[0][0]
+    self._policy_logits = utils.stable_scaled_log_softmax(self._net_outputs.q_values, self.tau, axis=1)/self.tau
+    self._stochastic_action = tf.random.categorical(self._policy_logits,num_samples=1,dtype=tf.int32)[0][0]
 
   def _build_target_q_op(self):
     """Build an op used as a target for the Q-value.
@@ -143,27 +134,33 @@ class MunchausenDQNAgentNew(dqn_agent.JaxDQNAgent):
     """
     replay_action_one_hot = tf.one_hot(
         self._replay.actions, self.num_actions, 1., 0., name='action_one_hot')
+
     # tau * ln pi_k+1 (s')
     replay_next_log_policy = utils.stable_scaled_log_softmax(
         self._replay_next_target_net_outputs.q_values, self.tau, axis=1)
+
     # tau * ln pi_k+1(s)
     replay_log_policy = utils.stable_scaled_log_softmax(
         self._replay_target_net_outputs.q_values, self.tau, axis=1)
-    replay_next_policy = utils.stable_softmax(  # pi_k+1(s')
+
+    # pi_k+1(s')
+    replay_next_policy = utils.stable_softmax(
         self._replay_next_target_net_outputs.q_values, self.tau, axis=1)
 
+    #W = [Q(S',a')- tau * ln pi_k+1 (s')] *  pi_k+1(s')
     replay_next_qt_softmax = tf.reduce_sum(
         (self._replay_next_target_net_outputs.q_values -
          replay_next_log_policy) * replay_next_policy, 1)
 
-    tau_log_pi_a = tf.reduce_sum(  # tau * ln pi_k+1(a|s)
+     # tau * ln pi_k+1(a|s)
+    tau_log_pi_a = tf.reduce_sum(
         replay_log_policy * replay_action_one_hot, axis=1)
 
-    tau_log_pi_a = tf.clip_by_value(
-        tau_log_pi_a,
-        clip_value_min=self.clip_value_min,
-        clip_value_max=1)#(original value)
-        #clip_value_max=0)
+    #tau_log_pi_a = tf.clip_by_value(
+    #    tau_log_pi_a,
+    #    clip_value_min=self.clip_value_min,
+    #    clip_value_max=1)
+    tau_log_pi_a = jnp.clip(tau_log_pi_a, clip_value_min=self.clip_value_min,clip_value_max=1)
 
     munchausen_term = self.alpha * tau_log_pi_a
 
@@ -189,23 +186,22 @@ class MunchausenDQNAgentNew(dqn_agent.JaxDQNAgent):
     Returns:
        int, the selected action.
     """
-    if self.eval_mode:
-      epsilon = self.epsilon_eval
+    epsilon = jnp.where(self.eval_mode,
+                        self.epsilon_eval,
+                        self.epsilon_fn(
+                            self.epsilon_decay_period,
+                            self.training_steps,
+                            self.min_replay_history,
+                            self.epsilon_train))
+
+    if self._interact == 'stochastic':
+    	selected_action = self._stochastic_action
+    elif self._interact == 'greedy':
+    	selected_action = self._q_argmax
     else:
-      epsilon = self.epsilon_fn(
-          self.epsilon_decay_period,
-          self.training_steps,
-          self.min_replay_history,
-          self.epsilon_train)
-    if random.random() <= epsilon:
-      # Choose a random action with probability epsilon.
-      return random.randint(0, self.num_actions - 1)
-    else:
-      # Choose the action with highest Q-value at the current state.
-      if self._interact == 'stochastic':
-        selected_action = self._stochastic_action
-      elif self._interact == 'greedy':
-        selected_action = self._q_argmax
-      else:
-        raise ValueError('Undefined interaction')
-      return self._sess.run(selected_action, {self.state_ph: self.state})
+      raise ValueError('Undefined interaction')
+
+    return jnp.where(random.random() <= epsilon,
+                          random.randint(0, self.num_actions - 1),
+                          selected_action)
+
