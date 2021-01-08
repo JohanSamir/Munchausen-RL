@@ -153,20 +153,16 @@ class MunchausenDQNAgent(dqn_agent.DQNAgent):
     #with tf.Session() as sess:
     #    sess.run(replay_action_one_hot)
 
-    
-
-
     #tf.print('replay_action_one_hot:',replay_action_one_hot,replay_action_one_hot.shape)
     # tau * ln pi_k+1 (s')
-    sess = tf.compat.v1.Session()
-    with sess.as_default():
-        replay_next_log_policy = utils.stable_scaled_log_softmax(
+    #sess = tf.compat.v1.Session()
+    #with sess.as_default():
+    replay_next_log_policy = utils.stable_scaled_log_softmax(
             self._replay_next_target_net_outputs.q_values, self.tau, axis=1)
     print('----------------------------------------------------------------------------')
     print('replay_next_log_policy:',replay_next_log_policy,replay_next_log_policy.shape)
     #tf.print('replay_next_log_policy:',replay_next_log_policy,replay_next_log_policy.shape)
 
-    print('AAAAAAAAAAAAAAAAAA')
     #with tf.Session() as sess:  print(replay_next_log_policy.eval())
     #tensor = tf.range(10)
     #with tf.Session() as sess:  print(replay_next_log_policy.eval()) 
@@ -185,6 +181,9 @@ class MunchausenDQNAgent(dqn_agent.DQNAgent):
     # tau * ln pi_k+1(s)
     replay_log_policy = utils.stable_scaled_log_softmax(
         self._replay_target_net_outputs.q_values, self.tau, axis=1)
+
+    print('----------------------------------------------------------------------------')
+    print('replay_log_policy:',replay_log_policy,replay_log_policy.shape)
 
     replay_next_policy = utils.stable_softmax(  # pi_k+1(s')
         self._replay_next_target_net_outputs.q_values, self.tau, axis=1)
@@ -208,10 +207,10 @@ class MunchausenDQNAgent(dqn_agent.DQNAgent):
     tau_log_pi_a = tf.reduce_sum(  # tau * ln pi_k+1(a|s)
         replay_log_policy * replay_action_one_hot, axis=1)
     print('----------------------------------------------------------------------------')
-    print('replay_log_policy-XXX:',replay_log_policy,replay_log_policy.shape)
+    print('replay_log_policy:',replay_log_policy,replay_log_policy.shape)
 
     print('----------------------------------------------------------------------------')
-    print('replay_action_one_hot_XXX:',replay_action_one_hot,replay_action_one_hot.shape)
+    print('replay_action_one_hot_:',replay_action_one_hot,replay_action_one_hot.shape)
 
     print('----------------------------------------------------------------------------')
     print('tau_log_pi_a:',tau_log_pi_a,tau_log_pi_a.shape)

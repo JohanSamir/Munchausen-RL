@@ -19,10 +19,10 @@ MunchausenDQNAgent.tf_device = '/cpu:*'  # use '/cpu:*' for non-GPU version
 MunchausenDQNAgent.optimizer_type = 'adam'
 MunchausenDQNAgent.optimizer_lr = 0.001
 
-#MunchausenDQNAgent.tau = 0.03 # 1st 0.03 , 0.2, 0.6
-#MunchausenDQNAgent.alpha = 0.9 # 1st 0.9 -> 1, 0.9
-#MunchausenDQNAgent.clip_value_min = -1 # 1st -1 -> -10, -5
-#MunchausenDQNAgent.interact = 'greedy'
+MunchausenDQNAgent.tau = 0.2 # 0.03  # Original 0.03
+MunchausenDQNAgent.alpha = 0.9 # 1 Best #0.9 #0.4 # Original 0.9 
+MunchausenDQNAgent.clip_value_min = -1 # -10 Best #-1 #-1 # Original-1
+MunchausenDQNAgent.interact = 'greedy'
 
 dqn/tf.train.AdamOptimizer.learning_rate = 0.001
 dqn/tf.train.AdamOptimizer.epsilon = 0.0003125
@@ -40,7 +40,7 @@ TrainRunner.create_environment_fn = @gym_lib.create_gym_environment
 
 Runner.num_iterations = 30
 Runner.training_steps = 1000
-Runner.max_steps_per_episode = 500
+Runner.max_steps_per_episode = 200
 
 WrappedReplayBuffer.replay_capacity = 50000
 WrappedReplayBuffer.batch_size = 128

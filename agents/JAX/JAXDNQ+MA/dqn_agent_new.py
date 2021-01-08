@@ -129,6 +129,7 @@ def target_m_dqn(model, target_network, states, next_states, actions,rewards, te
   # tau * ln pi_k+1 (s')
   replay_next_log_policy = utils.stable_scaled_log_softmax(
       _replay_next_target_net_outputs, tau, axis=1)
+  #_replay_next_target_net_outputs, tau, axis=-1)
   print('----------------------------------------------------------------------------')
   print('replay_next_log_policy:',replay_next_log_policy,replay_next_log_policy.shape)
   
@@ -147,7 +148,7 @@ def target_m_dqn(model, target_network, states, next_states, actions,rewards, te
 
   #W = [Q(S',a')- tau * ln pi_k+1 (s')] *  pi_k+1(s')
   replay_next_qt_softmax = jnp.sum((_replay_next_target_net_outputs -
-       replay_next_log_policy) * replay_next_policy, 1)
+       replay_next_log_policy) * replay_next_policy, axis=1)
 
   print('----------------------------------------------------------------------------')
   print('replay_next_qt_softmax:',replay_next_qt_softmax,replay_next_qt_softmax.shape)
@@ -164,7 +165,8 @@ def target_m_dqn(model, target_network, states, next_states, actions,rewards, te
   print('tau_log_pi_a:',tau_log_pi_a,tau_log_pi_a.shape)
 
   #clipping
-  tau_log_pi_a = jnp.clip(tau_log_pi_a, a_min=clip_value_min,a_max=1)
+  #a_max=1 -> original value
+  tau_log_pi_a = jnp.clip(tau_log_pi_a, a_min=clip_value_min,a_max=0)
 
   print('----------------------------------------------------------------------------')
   print('tau_log_pi_a:',tau_log_pi_a,tau_log_pi_a.shape)
@@ -323,6 +325,10 @@ class JaxDQNAgentNew(dqn_agent.JaxDQNAgent):
                                      self._clip_value_min,
                                      self._num_actions)
         if self._prioritized == 'prioritized':
+        #It must be: if self._prioritized == True:
+          #print('OJOOOOOOO prioritized')
+
+
           # The original prioritized experience replay uses a linear exponent
           # schedule 0.4 -> 1.0. Comparing the schedule to a fixed exponent of
           # 0.5 on 5 games (Asterix, Pong, Q*Bert, Seaquest, Space Invaders)
