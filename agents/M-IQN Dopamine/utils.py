@@ -21,9 +21,9 @@ It defines more numerically stable log_softmax and softmax operations. TF
 already implements the logSumExp trick for this kind of compute, but we have to
 implement it by hand to take into account a temperature.
 """
-import jax
-import jax.numpy as jnp
+
 import tensorflow.compat.v1 as tf
+
 tf.disable_v2_behavior()
 
 
@@ -37,9 +37,19 @@ def stable_scaled_log_softmax(x, tau, axis=-1):
   Returns:
     tau * tf.log_softmax(x/tau, axis=axis)
   """
-  max_x = tf.reduce_max(x, axis=axis, keepdims=True).numpy()
+  #print('----------------------------------------------------------------------------')
+  #print('x:',x,x.shape)
+  max_x = tf.reduce_max(x, axis=axis, keepdims=True)
+  #print('----------------------------------------------------------------------------')
+  #print('max_x:',max_x,max_x.shape)
   y = x - max_x
-  tau_lse = max_x + tau * jnp.log(tf.reduce_sum(jnp.exp(y / tau).numpy(), axis=axis, keepdims=True))
+  #print('----------------------------------------------------------------------------')
+  #print('y:',y,y.shape)
+  tau_lse = max_x + tau * tf.math.log(
+      tf.reduce_sum(tf.math.exp(y / tau), axis=axis, keepdims=True))
+  #print('----------------------------------------------------------------------------')
+  #print('tau_lse:',tau_lse,tau_lse.shape)
+
   return x - tau_lse
 
 
@@ -53,6 +63,13 @@ def stable_softmax(x, tau, axis=-1):
   Returns:
     softmax(x/tau, axis=axis)
   """
-  max_x = tf.reduce_max(x, axis=axis, keepdims=True).numpy()
+  #print('----------------------------------------------------------------------------')
+  #print('xR:',x,x.shape)
+  max_x = tf.reduce_max(x, axis=axis, keepdims=True)
+  #print('----------------------------------------------------------------------------')
+  #print('max_xR:',max_x,max_x.shape)
+
   y = x - max_x
-  return jax.nn.softmax(y/tau, axis=axis)
+  #print('----------------------------------------------------------------------------')
+  #print('YR:',y,y.shape)
+  return tf.nn.softmax(y/tau, axis=axis)

@@ -26,6 +26,8 @@ import jax.numpy as jnp
 import numpy as onp
 import tensorflow as tf
 import utils
+from scipy.special import logsumexp
+
 
 
 
@@ -37,7 +39,7 @@ def mse_loss(targets, predictions):
 def train(target_network, optimizer, states, actions, next_states, rewards,
           terminals, cumulative_gamma,double_dqn, mse_inf,tau,alpha,clip_value_min,num_actions):
   """Run the training step."""
-  print('ACTIONS 555',num_actions)
+  #print('ACTIONS 555',num_actions)
   def loss_fn(model, target, mse_inf):
     q_values = jax.vmap(model, in_axes=(0))(states).q_values
     q_values = jnp.squeeze(q_values)
@@ -63,122 +65,70 @@ def train(target_network, optimizer, states, actions, next_states, rewards,
   optimizer = optimizer.apply_gradient(grad)
   return optimizer, loss
 
-def target_DDQN(model, target_network, next_states, rewards, terminals, cumulative_gamma):
-  """Compute the target Q-value.
-  """
-
-  next_q_values = jax.vmap(model.target, in_axes=(0))(next_states).q_values
-  next_q_values = jnp.squeeze(next_q_values)
-  replay_next_qt_max = jnp.argmax(next_q_values, axis=1)
-
-  next_q_state_values = jax.vmap(target_network, in_axes=(0))(next_states).q_values
-  q_values = jnp.squeeze(next_q_state_values)
-  replay_chosen_q = jax.vmap(lambda t, u: t[u])(q_values, replay_next_qt_max)
- 
-  return jax.lax.stop_gradient(rewards + cumulative_gamma * replay_chosen_q *
-                               (1. - terminals))
-
 def target_m_dqn(model, target_network, states, next_states, actions,rewards, terminals, 
                 cumulative_gamma,tau,alpha,clip_value_min,num_actions):
 
-  print('ACTIONS 666',num_actions)
-  """Compute the target Q-value.
-  model -> Online: For computing the current state's Q-values.
-  target_network: For computing the next state's target Q-values.
-
-  """
-  # Greedy-> select action
-  #_net_outputs_v = jax.vmap(model.target, in_axes=(0))(states).q_values
-  #_net_outputs = jnp.squeeze(_net_outputs_v)
-  #_q_argmax = jnp.argmax(_net_outputs, axis=1)
-
-  #_replay_net_outputs = jax.vmap(model.target, in_axes=(0))(states).q_values
-  #_replay_net_outputs = jnp.squeeze(_replay_net_outputs)
-
-  #_replay_next_net_outputs= jax.vmap(model.target, in_axes=(0))(next_states).q_values
-  #_replay_next_net_outputs = jnp.squeeze(_replay_next_net_outputs)
-
-  _replay_target_net_outputs = jax.vmap(target_network, in_axes=(0))(states).q_values
-  _replay_target_net_outputs = jnp.squeeze(_replay_target_net_outputs)
-
-  _replay_next_target_net_outputs = jax.vmap(target_network, in_axes=(0))(next_states).q_values
-  _replay_next_target_net_outputs = jnp.squeeze(_replay_next_target_net_outputs)
-
-  #stochastic_action
-  #tf.random.categorical -> in JAX?
-  #_policy_logits = utils.stable_scaled_log_softmax(_net_outputs_v, self.tau, axis=1)/self.tau
-  #_stochastic_action = tf.random.categorical(_policy_logits, num_samples=1, dtype=tf.int32)[0][0]
-
-  
-  #-------------- _build_target_q -------------------------
-
-  """Build an op used as a target for the Q-value.
-
-    Returns:
-      target_q_op: An op calculating the Q-value.
-  """
-
-  #replay_action_one_hot = tf.one_hot(self._replay.actions, self.num_actions, 1., 0., name='action_one_hot')
-  print('clip_value_min---------',clip_value_min)
-  print('num_actions---------',num_actions)
   replay_action_one_hot = jax.nn.one_hot(actions, num_actions)
-  print('----------------------------------------------------------------------------')
-  print('replay_action_one_hot:',replay_action_one_hot,replay_action_one_hot.shape)
+  #print('replay_action_one_hot:',replay_action_one_hot.shape,replay_action_one_hot)
 
+  #Neurla Networks -> Target[Target] y Expected [Online]
+  q_state_values = jax.vmap(target_network, in_axes=(0))(states).q_values
+  q_state_values = jnp.squeeze(q_state_values)
+  replay_qt_max = jnp.argmax(q_state_values, axis=1).reshape(q_state_values.shape[0],1)
 
-  # tau * ln pi_k+1 (s')
-  replay_next_log_policy = utils.stable_scaled_log_softmax(
-      _replay_next_target_net_outputs, tau, axis=1)
-  #_replay_next_target_net_outputs, tau, axis=-1)
-  print('----------------------------------------------------------------------------')
-  print('replay_next_log_policy:',replay_next_log_policy,replay_next_log_policy.shape)
+  next_q_values = jax.vmap(target_network, in_axes=(0))(next_states).q_values
+  next_q_values = jnp.squeeze(next_q_values)
+  replay_next_qt_max = jnp.argmax(next_q_values, axis=1).reshape(next_q_values.shape[0],1)
+
+  # Equa.1 [Johan]
+  #A
+  #print('next_states:',next_states.shape,next_states)
+  #print('next_q_values:',next_q_values.shape,next_q_values)
+  #print('replay_next_qt_max:',replay_next_qt_max.shape,replay_next_qt_max)
+  logsum = logsumexp((next_q_values-replay_next_qt_max)/tau,1).reshape(next_q_values.shape[0],1)
+  #print('logsum:',logsum.shape,logsum)
+  #B
+  tau_log_pi_next = next_q_values-replay_next_qt_max-tau*logsum
+  #print('tau_log_pi_next:',tau_log_pi_next.shape,tau_log_pi_next)
+
+  # Equa.3 [Johan]
+
+  pi_target = jax.nn.softmax(next_q_values/tau, axis=-1)
+  #print('pi_target:',pi_target.shape,pi_target)
+
+  # Equa.4+3+1 [Johan]
+  #next_qt_softmax = cumulative_gamma*(q_ope* jnp.sum((next_q_values-tau_log_pi_next),axis=0))
+  #print('(1. - terminals:)',(1. - terminals),(1. - terminals).shape)
+  ter = (1. - terminals).reshape((1. - terminals).shape[0],1)
+  #print('ter',ter,ter.shape)
   
-  # tau * ln pi_k+1(s)
-  replay_log_policy = utils.stable_scaled_log_softmax(
-      _replay_target_net_outputs, tau, axis=1)
+  Q_target = cumulative_gamma*jnp.sum(pi_target*(next_q_values-tau_log_pi_next)*ter,axis=1)
+  Q_target = Q_target.reshape(Q_target.shape[0],1)
+  #print('Q_target:',Q_target.shape,Q_target)
   
-  # pi_k+1(s')
-  replay_next_policy = utils.stable_softmax(
-      _replay_next_target_net_outputs, tau, axis=1)
+    # Equa.2 [Johan]
+  logsum_q_targe = logsumexp((q_state_values-replay_qt_max)/tau,1).reshape(next_q_values.shape[0],1)
+  #print('logsum_q_targe:',logsum_q_targe.shape,logsum_q_targe)
 
-  print('----------------------------------------------------------------------------')
-  print('replay_next_policy:',replay_next_policy,replay_next_policy.shape)
-  print('----------------------------------------------------------------------------')
-  print('_replay_next_target_net_outputs.q_values:',_replay_next_target_net_outputs,_replay_next_target_net_outputs.shape) 
+  tau_log_pi = q_state_values-replay_qt_max-tau*logsum_q_targe
+  #print('tau_log_pi:',tau_log_pi.shape,tau_log_pi)
 
-  #W = [Q(S',a')- tau * ln pi_k+1 (s')] *  pi_k+1(s')
-  replay_next_qt_softmax = jnp.sum((_replay_next_target_net_outputs -
-       replay_next_log_policy) * replay_next_policy, axis=1)
+  # tau_log_pi_a = jnp.sum(replay_log_policy * replay_action_one_hot, axis=1)
 
-  print('----------------------------------------------------------------------------')
-  print('replay_next_qt_softmax:',replay_next_qt_softmax,replay_next_qt_softmax.shape)
+  #munchausen_addon = tau_log_pi * replay_action_one_hot
+  munchausen_addon = jax.vmap(lambda x, y: x[y])(tau_log_pi, actions)
+  #print('munchausen_addon:',munchausen_addon.shape,munchausen_addon)
 
-  print('----------------------------------------------------------------------------')
-  print('replay_log_policy-XXX:',replay_log_policy,replay_log_policy.shape)
+  munchausen_reward = rewards + alpha* jnp.clip(munchausen_addon, a_min=clip_value_min,a_max=0)
+  #print('munchausen_reward:',munchausen_reward.shape,munchausen_reward)
 
-  print('----------------------------------------------------------------------------')
-  print('replay_action_one_hot_XXX:',replay_action_one_hot,replay_action_one_hot.shape)
+  #print('rewards:',rewards.shape)
+  #print('terminals:',terminals.shape)
 
-  # tau * ln pi_k+1(a|s)
-  tau_log_pi_a = jnp.sum(replay_log_policy * replay_action_one_hot, axis=1)
-  print('----------------------------------------------------------------------------')
-  print('tau_log_pi_a:',tau_log_pi_a,tau_log_pi_a.shape)
 
-  #clipping
-  #a_max=1 -> original value
-  tau_log_pi_a = jnp.clip(tau_log_pi_a, a_min=clip_value_min,a_max=0)
-
-  print('----------------------------------------------------------------------------')
-  print('tau_log_pi_a:',tau_log_pi_a,tau_log_pi_a.shape)
-
-  munchausen_term = alpha * tau_log_pi_a
-  print('----------------------------------------------------------------------------')
-  print('munchausen_term:',munchausen_term,munchausen_term.shape)
-
-  modified_bellman = (rewards + munchausen_term + cumulative_gamma * replay_next_qt_softmax * (1. - terminals))
-  print('----------------------------------------------------------------------------')
-  print('modified_bellman:',modified_bellman,modified_bellman.shape)
-  return jax.lax.stop_gradient(modified_bellman)
+  q_target = munchausen_reward+Q_target 
+  #print('q_target:',q_target.shape,q_target)
+  return jax.lax.stop_gradient(q_target)
 
 @gin.configurable
 class JaxDQNAgentNew(dqn_agent.JaxDQNAgent):
@@ -258,7 +208,7 @@ class JaxDQNAgentNew(dqn_agent.JaxDQNAgent):
     self._dueling = dueling
     self._double_dqn = double_dqn
     self._mse_inf = mse_inf
-    print('ACTIONS 222',num_actions)
+    #print('ACTIONS 222',num_actions)
 
     super(JaxDQNAgentNew, self).__init__(
         num_actions= num_actions,
@@ -273,9 +223,9 @@ class JaxDQNAgentNew(dqn_agent.JaxDQNAgent):
         optimizer=optimizer,
         epsilon_fn=dqn_agent.identity_epsilon if self._noisy == True else epsilon_fn)
 
-    print('ACTIONS 333',num_actions)
+    #print('ACTIONS 333',num_actions)
     self._num_actions=num_actions
-    print('ACTIONS 444',self._num_actions)
+    #print('ACTIONS 444',self._num_actions)
     self._prioritized=prioritized
     self._rng = jax.random.PRNGKey(0)
     state_shape = self.observation_shape + (self.stack_size,)

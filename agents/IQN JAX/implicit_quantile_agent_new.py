@@ -213,6 +213,9 @@ class JaxImplicitQuantileAgentNew(dqn_agent.JaxDQNAgent):
 
   def __init__(self,
                num_actions,
+               observation_shape=dqn_agent.NATURE_DQN_OBSERVATION_SHAPE,
+               observation_dtype=dqn_agent.NATURE_DQN_DTYPE,
+               stack_size=dqn_agent.NATURE_DQN_STACK_SIZE,
                network=networks.ImplicitQuantileNetwork,
                kappa=1.0,
                num_tau_samples=32,
@@ -220,9 +223,19 @@ class JaxImplicitQuantileAgentNew(dqn_agent.JaxDQNAgent):
                num_quantile_samples=32,
                quantile_embedding_dim=64,
                double_dqn=False,
+               gamma=0.99,
+               update_horizon=1,
+               min_replay_history=20000,
+               update_period=4,
+               target_update_period=8000,
                epsilon_fn=dqn_agent.linearly_decaying_epsilon,
+               epsilon_train=0.01,
+               epsilon_eval=0.001,
+               epsilon_decay_period=250000,
                replay_scheme='prioritized',
-               optimizer='adam'):
+               optimizer='adam',
+               summary_writer=None,
+               summary_writing_frequency=500):
     """Initializes the agent and constructs the necessary components.
 
     Most of this constructor's parameters are IQN-specific hyperparameters whose
@@ -284,8 +297,22 @@ class JaxImplicitQuantileAgentNew(dqn_agent.JaxDQNAgent):
 
     super(JaxImplicitQuantileAgentNew, self).__init__(
         num_actions=num_actions,
+        observation_shape=observation_shape,
+        observation_dtype=observation_dtype,
+        stack_size=stack_size,
         network=network.partial(quantile_embedding_dim=quantile_embedding_dim),
-        optimizer=optimizer)
+        gamma=gamma,
+        update_horizon=update_horizon,
+        min_replay_history=min_replay_history,
+        update_period=update_period,
+        target_update_period=target_update_period,
+        epsilon_fn=epsilon_fn,
+        epsilon_train=epsilon_train,
+        epsilon_eval=epsilon_eval,
+        epsilon_decay_period=epsilon_decay_period,
+        optimizer=optimizer,
+        summary_writer=summary_writer,
+        summary_writing_frequency=summary_writing_frequency)
 
   def _create_network(self, name):
     r"""Builds an Implicit Quantile ConvNet.

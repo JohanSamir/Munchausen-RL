@@ -26,8 +26,7 @@ from dopamine.discrete_domains import atari_lib
 import gin
 import numpy as np
 import tensorflow.compat.v1 as tf
-
-from munchausen_rl.common import utils
+import utils
 
 tf.disable_v2_behavior()
 
