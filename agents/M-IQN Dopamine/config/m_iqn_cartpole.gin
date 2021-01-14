@@ -5,12 +5,12 @@ import dopamine.replay_memory.circular_replay_buffer
 import gin.tf.external_configurables
 
 import m_iqn
-import networks_new
+import networks_New
 
 MunchausenIQNAgent.observation_shape = %gym_lib.CARTPOLE_OBSERVATION_SHAPE
 MunchausenIQNAgent.observation_dtype = %gym_lib.CARTPOLE_OBSERVATION_DTYPE
 MunchausenIQNAgent.stack_size = %gym_lib.CARTPOLE_STACK_SIZE
-MunchausenIQNAgent.network = @networks_new.ImplicitQuantileNetwork_New #@gym_lib.CartpoleDQNNetwork
+MunchausenIQNAgent.network = @networks_New.ImplicitQuantileNetwork_New #@gym_lib.CartpoleDQNNetwork
 MunchausenIQNAgent.gamma = 0.99
 MunchausenIQNAgent.update_horizon = 1
 MunchausenIQNAgent.min_replay_history = 500

@@ -34,16 +34,17 @@ import jax
 import jax.numpy as jnp
 import numpy as onp
 import tensorflow as tf
+import jax.scipy.special as scp
 
 
 @functools.partial(
     jax.vmap,
-    in_axes=(None, None, 0, 0, 0, None, None, None, None, None),
+    in_axes=(None, None, 0, 0, 0, 0, 0, None, None, None, None, None,None, None, None,None),
     out_axes=(None, 0))
 def target_quantile_values(online_network, target_network,
-                           next_states, rewards, terminals,
+                           states,actions,next_states, rewards, terminals,
                            num_tau_prime_samples, num_quantile_samples,
-                           cumulative_gamma, double_dqn, rng):
+                           cumulative_gamma, double_dqn, rng,tau,alpha,clip_value_min,num_actions):
   """Build the target for return values at given quantiles.
 
   Args:
@@ -62,62 +63,92 @@ def target_quantile_values(online_network, target_network,
     Jax random number generator.
     The target quantile values.
   """
-  rewards = jnp.tile(rewards, [num_tau_prime_samples])
-  print('rewards:',rewards.shape)
-  is_terminal_multiplier = 1. - terminals.astype(jnp.float32)
-  print('is_terminal_multiplier:',is_terminal_multiplier.shape)
-  # Incorporate terminal state to discount factor.
-  gamma_with_terminal = cumulative_gamma * is_terminal_multiplier
-  gamma_with_terminal = jnp.tile(gamma_with_terminal, [num_tau_prime_samples])
-  print('gamma_with_terminal:',gamma_with_terminal.shape)
-
-  gamma_with_terminalR = jnp.tile(cumulative_gamma, [num_tau_prime_samples])
-  print('gamma_with_terminalR:',gamma_with_terminalR.shape)
-
+  
   rng, rng1, rng2 = jax.random.split(rng, num=3)
-  print('rng:',rng.shape)
-  print('rng2:',rng2.shape)
+  print('states',states.shape)
+  print('num_actions:',num_actions)
   # Compute Q-values which are used for action selection for the next states
   # in the replay buffer. Compute the argmax over the Q-values.
-  
-  outputs_action = target_network(next_states,num_quantiles=num_quantile_samples,rng=rng1)
-
-  #print('outputs_action:',outputs_action.shape) # Print this variable it is not possible
+  outputs_action = target_network(next_states,num_quantiles=num_quantile_samples, rng=rng1)
+  print('outputs_action:',outputs_action)
   target_quantile_values_action = outputs_action.quantile_values
   print('target_quantile_values_action:',target_quantile_values_action.shape)
-  target_q_values = jnp.squeeze(
-      jnp.mean(target_quantile_values_action, axis=0))
+  
+  target_q_values = jnp.squeeze(jnp.mean(target_quantile_values_action, axis=0))
   print('target_q_values:',target_q_values.shape)
-  # Shape: batch_size.
   next_qt_argmax = jnp.argmax(target_q_values)
-  print('next_qt_argmax:',next_qt_argmax.shape)
-  # Get the indices of the maximium Q-value across the action dimension.
-  # Shape of next_qt_argmax: (num_tau_prime_samples x batch_size).
-  next_state_target_outputs = target_network(
-      next_states,
-      num_quantiles=num_tau_prime_samples,
-      rng=rng2)
-  #print('next_state_target_outputs:',next_state_target_outputs.shape)
-  next_qt_argmax = jnp.tile(next_qt_argmax, [num_tau_prime_samples])
-  print('next_qt_argmax:',next_qt_argmax.shape)
-  target_quantile_vals = (
-      jax.vmap(lambda x, y: x[y])(next_state_target_outputs.quantile_values,
-                                  next_qt_argmax))
-  print('target_quantile_vals:',target_quantile_vals.shape)
-  target_quantile_vals = rewards + gamma_with_terminal * target_quantile_vals
-  print('target_quantile_vals:',target_quantile_vals.shape)
 
-  A = target_quantile_vals[:, None]
+  
+  print('next_qt_argmax:',next_qt_argmax.shape)
+  next_qt_argmax = jnp.expand_dims(next_qt_argmax,-1)
+  print('next_qt_argmax:',next_qt_argmax.shape)
+
+  q = (target_q_values-next_qt_argmax)
+  print('q:',q.shape)
+  logsum = jnp.expand_dims(scp.logsumexp(q/tau,0),-1)
+  print('logsum:',logsum.shape)
+  #B
+  tau_log_pi_next = jnp.expand_dims(target_q_values-next_qt_argmax-tau*logsum,0)
+  print('tau_log_pi_next:',tau_log_pi_next.shape)
+ 
+  pi_target = jnp.expand_dims(jax.nn.softmax(target_q_values/tau, axis=-1),0)
+  print('pi_target:',pi_target.shape)
+
+
+  rewards = jnp.tile(rewards, [num_tau_prime_samples])
+  print('Revisa__rewards:',rewards)
+  
+  is_terminal_multiplier = 1. - jnp.expand_dims(terminals.astype(jnp.float32),-1)
+  print('Revisa__is_terminal_multiplier:',is_terminal_multiplier.shape)
+  
+  Q_target = cumulative_gamma*jnp.sum(pi_target*(target_quantile_values_action-tau_log_pi_next)*is_terminal_multiplier,axis=1)
+  print('Q_target:',Q_target.shape)
+  Q_target = jnp.expand_dims(Q_target,1)
+  #print('Q_target:',Q_target.shape,Q_target)
+  print('Q_target:',Q_target.shape)
+  
+  outputs_action = target_network(states,num_quantiles=num_quantile_samples, rng=rng1)
+  q_state_values = outputs_action.quantile_values
+  q_state_values = jnp.squeeze(jnp.mean(q_state_values, axis=0))
+  print('q_state_values:',q_state_values.shape)
+
+  replay_qt_max = jnp.argmax(q_state_values)
+  print('replay_qt_max:',replay_qt_max.shape)
+  replay_qt_max = jnp.expand_dims(replay_qt_max,-1)
+  print('replay_qt_max:',replay_qt_max.shape)
+
+  logsum_q_targe =  scp.logsumexp((q_state_values-replay_qt_max)/tau,0)
+  print('logsum_q_targe:',logsum_q_targe.shape)
+
+  tau_log_pi =  q_state_values-replay_qt_max-tau*logsum_q_targe
+  print('tau_log_pi:',tau_log_pi.shape,tau_log_pi)
+  print('actions:',actions.shape,actions)
+
+  actions = actions[:,]
+
+  #munchausen_addon = tau_log_pi * replay_action_one_hot
+  munchausen_addon = jax.vmap(lambda x, y: x[y])(tau_log_pi, actions)
+  print('munchausen_addon:',munchausen_addon.shape)
+
+  munchausen_reward = rewards + alpha* jnp.clip(munchausen_addon, a_min=clip_value_min,a_max=0)
+  print('munchausen_reward:',munchausen_reward.shape)
+
+  #print('rewards:',rewards.shape)
+  #print('terminals:',terminals.shape)
+
+  q_target = munchausen_reward+Q_target 
+  print('q_target:',q_target.shape)
+  # We return with an extra dimension, which is expected by train.
+  A= target_quantile_vals[:, None]
   print('A:',A.shape)
 
-  # We return with an extra dimension, which is expected by train.
   return rng, jax.lax.stop_gradient(A)
 
 
-@functools.partial(jax.jit, static_argnums=(7, 8, 9, 10, 11, 12))
+@functools.partial(jax.jit, static_argnums=(7, 8, 9, 10, 11, 12,13,14,15,16))
 def train(target_network, optimizer, states, actions, next_states, rewards,
           terminals, num_tau_samples, num_tau_prime_samples,
-          num_quantile_samples, cumulative_gamma, double_dqn, kappa, rng):
+          num_quantile_samples, cumulative_gamma, double_dqn, kappa, tau,alpha,clip_value_min, num_actions,rng):
   """Run a training step."""
   def loss_fn(model, rng_input, target_quantile_vals):
     model_output = jax.vmap(
@@ -161,6 +192,8 @@ def train(target_network, optimizer, states, actions, next_states, rewards,
   rng, target_quantile_vals = target_quantile_values(
       optimizer.target,
       target_network,
+      states,
+      actions,
       next_states,
       rewards,
       terminals,
@@ -168,7 +201,13 @@ def train(target_network, optimizer, states, actions, next_states, rewards,
       num_quantile_samples,
       cumulative_gamma,
       double_dqn,
-      rng)
+      rng,
+      tau,
+      alpha,
+      clip_value_min,
+      num_actions
+      )
+
   grad_fn = jax.value_and_grad(loss_fn)
   rng, rng_input = jax.random.split(rng)
   loss, grad = grad_fn(optimizer.target, rng_input, target_quantile_vals)
@@ -229,6 +268,11 @@ class JaxImplicitQuantileAgentNew(dqn_agent.JaxDQNAgent):
 
   def __init__(self,
                num_actions,
+
+               tau,
+               alpha=1,
+               clip_value_min=-10,
+
                observation_shape=dqn_agent.NATURE_DQN_OBSERVATION_SHAPE,
                observation_dtype=dqn_agent.NATURE_DQN_DTYPE,
                stack_size=dqn_agent.NATURE_DQN_STACK_SIZE,
@@ -299,6 +343,10 @@ class JaxImplicitQuantileAgentNew(dqn_agent.JaxDQNAgent):
       summary_writing_frequency: int, frequency with which summaries will be
         written. Lower values will result in slower training.
     """
+    self._tau = tau
+    self._alpha = alpha
+    self._clip_value_min = clip_value_min
+
     self.kappa = kappa
     # num_tau_samples = N below equation (3) in the paper.
     self.num_tau_samples = num_tau_samples
@@ -329,6 +377,8 @@ class JaxImplicitQuantileAgentNew(dqn_agent.JaxDQNAgent):
         optimizer=optimizer,
         summary_writer=summary_writer,
         summary_writing_frequency=summary_writing_frequency)
+
+    self._num_actions=num_actions
 
   def _create_network(self, name):
     r"""Builds an Implicit Quantile ConvNet.
@@ -437,7 +487,12 @@ class JaxImplicitQuantileAgentNew(dqn_agent.JaxDQNAgent):
             self.cumulative_gamma,
             self.double_dqn,
             self.kappa,
+            self._tau,
+            self._alpha,
+            self._clip_value_min,
+            self._num_actions,
             self._rng)
+
         if (self.summary_writer is not None and
             self.training_steps > 0 and
             self.training_steps % self.summary_writing_frequency == 0):

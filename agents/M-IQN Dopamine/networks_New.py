@@ -96,6 +96,7 @@ class ImplicitQuantileNetwork_New(tf.keras.Model):
       name: str, used to create scope for network parameters.
     """
     super(ImplicitQuantileNetwork_New, self).__init__(name=name)
+    
     self.num_actions = num_actions
     self.quantile_embedding_dim = quantile_embedding_dim
     # We need the activation function during `call`, therefore set the field.
