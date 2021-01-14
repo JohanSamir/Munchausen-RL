@@ -35,6 +35,7 @@ import jax.numpy as jnp
 import numpy as onp
 import tensorflow as tf
 import jax.scipy.special as scp
+import jax.lax
 
 
 @functools.partial(
@@ -65,70 +66,98 @@ def target_quantile_values(online_network, target_network,
   """
   
   rng, rng1, rng2 = jax.random.split(rng, num=3)
+  #[states,1,1]
   print('states',states.shape)
   print('num_actions:',num_actions)
   # Compute Q-values which are used for action selection for the next states
   # in the replay buffer. Compute the argmax over the Q-values.
+  
+  #[BatchSize,num_quantile_samples,actiones]
   outputs_action = target_network(next_states,num_quantiles=num_quantile_samples, rng=rng1)
   print('outputs_action:',outputs_action)
+
+  #[num_quantile_samples,actions]
   target_quantile_values_action = outputs_action.quantile_values
   print('target_quantile_values_action:',target_quantile_values_action.shape)
   
+  #BatchSize[actions]
   target_q_values = jnp.squeeze(jnp.mean(target_quantile_values_action, axis=0))
   print('target_q_values:',target_q_values.shape)
-  next_qt_argmax = jnp.argmax(target_q_values)
 
-  
+  #BatchSize[ ]
+  next_qt_argmax = jnp.argmax(target_q_values)
   print('next_qt_argmax:',next_qt_argmax.shape)
+
+  #BatchSize[1]
   next_qt_argmax = jnp.expand_dims(next_qt_argmax,-1)
   print('next_qt_argmax:',next_qt_argmax.shape)
 
+  #BatchSize[actions]
   q = (target_q_values-next_qt_argmax)
   print('q:',q.shape)
+
+  #BatchSize[1]
   logsum = jnp.expand_dims(scp.logsumexp(q/tau,0),-1)
   print('logsum:',logsum.shape)
-  #B
+  
+  #BatchSize[1,actions]
   tau_log_pi_next = jnp.expand_dims(target_q_values-next_qt_argmax-tau*logsum,0)
   print('tau_log_pi_next:',tau_log_pi_next.shape)
  
+  #BatchSize[1,actions] 
   pi_target = jnp.expand_dims(jax.nn.softmax(target_q_values/tau, axis=-1),0)
   print('pi_target:',pi_target.shape)
 
-
-  rewards = jnp.tile(rewards, [num_tau_prime_samples])
-  print('Revisa__rewards:',rewards)
-  
+  #BatchSize[1] 
   is_terminal_multiplier = 1. - jnp.expand_dims(terminals.astype(jnp.float32),-1)
-  print('Revisa__is_terminal_multiplier:',is_terminal_multiplier.shape)
-  
+  print('is_terminal_multiplier:',is_terminal_multiplier.shape)
+
+  #BatchSize[num_quantile_samples]
   Q_target = cumulative_gamma*jnp.sum(pi_target*(target_quantile_values_action-tau_log_pi_next)*is_terminal_multiplier,axis=1)
   print('Q_target:',Q_target.shape)
+  
+  #BatchSize[num_quantile_samples,1]
   Q_target = jnp.expand_dims(Q_target,1)
-  #print('Q_target:',Q_target.shape,Q_target)
   print('Q_target:',Q_target.shape)
   
+  #BatchSize[actions]
   outputs_action = target_network(states,num_quantiles=num_quantile_samples, rng=rng1)
   q_state_values = outputs_action.quantile_values
   q_state_values = jnp.squeeze(jnp.mean(q_state_values, axis=0))
   print('q_state_values:',q_state_values.shape)
 
+  #BatchSize[ ]
   replay_qt_max = jnp.argmax(q_state_values)
   print('replay_qt_max:',replay_qt_max.shape)
+  
+  #BatchSize[1]
   replay_qt_max = jnp.expand_dims(replay_qt_max,-1)
   print('replay_qt_max:',replay_qt_max.shape)
 
+  #BatchSize[ ]
   logsum_q_targe =  scp.logsumexp((q_state_values-replay_qt_max)/tau,0)
   print('logsum_q_targe:',logsum_q_targe.shape)
 
+  #BatchSize[actios,]
   tau_log_pi =  q_state_values-replay_qt_max-tau*logsum_q_targe
   print('tau_log_pi:',tau_log_pi.shape,tau_log_pi)
+  
+  #BatchSize[ ]
   print('actions:',actions.shape,actions)
+  
+  #BatchSize[1]
+  actions = jnp.expand_dims(actions,-1)
+  print('actions_l:',actions.shape,actions)
 
-  actions = actions[:,]
+  #actions = jax.nn.one_hot(actions, 2)
+  #actions = tau_log_pi * actions
+  #print('actions:',actions.shape,actions)
 
-  #munchausen_addon = tau_log_pi * replay_action_one_hot
   munchausen_addon = jax.vmap(lambda x, y: x[y])(tau_log_pi, actions)
   print('munchausen_addon:',munchausen_addon.shape)
+
+  rewards = jnp.tile(rewards, [num_tau_prime_samples])
+  print('Revisa__rewards:',rewards)
 
   munchausen_reward = rewards + alpha* jnp.clip(munchausen_addon, a_min=clip_value_min,a_max=0)
   print('munchausen_reward:',munchausen_reward.shape)
