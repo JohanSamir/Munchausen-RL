@@ -82,6 +82,17 @@ def target_DDQN(model, target_network, next_states, rewards, terminals, cumulati
   return jax.lax.stop_gradient(rewards + cumulative_gamma * replay_chosen_q *
                                (1. - terminals))
 
+def stable_scaled_log_softmax(x, tau, axis=-1):
+  max_x = jnp.amax(x, axis=axis, keepdims=True)
+  y = x - max_x
+  tau_lse = max_x + tau * jnp.log(jnp.sum(jnp.exp(y / tau), axis=axis, keepdims=True))
+  return x - tau_lse
+
+def stable_softmax(x, tau, axis=-1):
+  max_x = jnp.amax(x, axis=axis, keepdims=True)
+  y = x - max_x
+  return jax.nn.softmax(y/tau, axis=axis)
+
 def target_m_dqn(model, target_network, states, next_states, actions,rewards, terminals, 
                 cumulative_gamma,tau,alpha,clip_value_min):
   """Compute the target Q-value. Munchausen DQN"""
@@ -93,39 +104,39 @@ def target_m_dqn(model, target_network, states, next_states, actions,rewards, te
   next_q_values = jnp.squeeze(next_q_values)
   print('next_q_values:',next_q_values.shape)
 
+  tau_log_pi_next =  stable_scaled_log_softmax(next_q_values, tau, axis=1)
+  #tau_log_pi_next =  jnp.amax(next_q_values,axis=1,keepdims=True)
+  #print('tau_log_pi_next:',tau_log_pi_next.shape)
 
-  #stable_scaled_log_softmax( 
-  tau_log_pi_next =  jnp.max(next_q_values,axis=1,keepdims=True)
+  #y = next_q_values - tau_log_pi_next
+  #tau_lse = tau_log_pi_next + tau * jnp.log(jnp.sum(jnp.exp(y/tau), axis=1, keepdims=True))
+  #tau_log_pi_next = next_q_values - tau_lse
   print('tau_log_pi_next:',tau_log_pi_next.shape)
 
-  y = next_q_values - tau_log_pi_next
-  tau_lse = tau_log_pi_next + tau * jnp.log(jnp.sum(jnp.exp(y/tau), axis=1, keepdims=True))
-  tau_log_pi_next = next_q_values - tau_lse
-  print('tau_log_pi_next:',tau_log_pi_next.shape)
 
-
-  #stable_softmax(
-  pi_target = jnp.max(next_q_values, axis=1, keepdims=True)
+  #pi_target = jnp.amax(next_q_values, axis=1, keepdims=True)
+  pi_target = stable_softmax(next_q_values,tau, axis=1)
   print('pi_target:',pi_target.shape)
 
-  y = next_q_values - pi_target
-  print('y:',y.shape)
-  pi_target = jax.nn.softmax(y/tau, axis=1)
-  print('pi_target:',pi_target.shape)
+  #y = next_q_values - pi_target
+  #print('y:',y.shape)
+  #pi_target = jax.nn.softmax(y/tau, axis=1)
+  #print('pi_target:',pi_target.shape)
 
 
-  replay_next_qt_softmax = jnp.sum(pi_target*(next_q_values-tau_log_pi_next),axis=1)
+  replay_next_qt_softmax = jnp.sum((next_q_values-tau_log_pi_next)*pi_target,axis=1)
   #Q_target = Q_target.reshape(Q_target.shape[0],1)
   print('replay_next_qt_softmax:',replay_next_qt_softmax.shape)
 
 
-  replay_log_policy =  jnp.max(q_state_values,axis=1,keepdims=True)
+  #replay_log_policy =  jnp.amax(q_state_values,axis=1,keepdims=True)
+  replay_log_policy = stable_scaled_log_softmax(q_state_values, tau, axis=1)
   print('replay_log_policy:',replay_log_policy.shape)
 
-  y = q_state_values - replay_log_policy
-  tau_lse = replay_log_policy + tau * jnp.log(jnp.sum(jnp.exp(y/tau), axis=1, keepdims=True))
-  replay_log_policy = q_state_values - tau_lse
-  print('replay_log_policy:',replay_log_policy.shape)
+  #y = q_state_values - replay_log_policy
+  #tau_lse = replay_log_policy + tau * jnp.log(jnp.sum(jnp.exp(y/tau), axis=1, keepdims=True))
+  #replay_log_policy = q_state_values - tau_lse
+  #print('replay_log_policy:',replay_log_policy.shape)
 
 
   replay_action_one_hot = jax.nn.one_hot(actions, 2)
