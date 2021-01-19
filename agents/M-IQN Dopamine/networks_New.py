@@ -81,7 +81,7 @@ class BasicDiscreteDomainNetwork(tf.keras.layers.Layer):
     x = self.dense1(x)
     x = self.dense2(x)
     x = self.last_layer(x)
-    return 
+    return x
 
 
 @gin.configurable

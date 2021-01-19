@@ -30,7 +30,7 @@ import utils
 
 tf.disable_v2_behavior()
 
-
+# 'stochastic',
 @gin.configurable
 class MunchausenIQNAgent(rainbow_agent.RainbowAgent):
   """An implementation of the Munchausen-IQN agent."""
@@ -46,7 +46,7 @@ class MunchausenIQNAgent(rainbow_agent.RainbowAgent):
                alpha=0.9,
                tau=0.03,
                clip_value_min=-1,
-               interact='stochastic',
+               interact='greedy',
                replay_scheme='uniform',
                num_tau_samples=32,
                num_tau_prime_samples=32,
@@ -262,24 +262,35 @@ class MunchausenIQNAgent(rainbow_agent.RainbowAgent):
                                         self.num_quantile_samples)
 
     # Shape: (num_quantile_samples x batch_size) x num_actions.
+    print('target_action:',target_action)
     target_next_quantile_values_action = target_next_action.quantile_values
+    print('target_next_quantile_values_action:',target_next_quantile_values_action.shape,target_next_quantile_values_action)
     # Shape: num_quantile_samples x batch_size x num_actions.
     target_next_quantile_values_action = tf.reshape(
         target_next_quantile_values_action,
         [self.num_quantile_samples, self._replay.batch_size, self.num_actions])
+    print('target_next_quantile_values_action:',target_next_quantile_values_action.shape,target_next_quantile_values_action)
+
 
     # Shape: (num_quantile_samples x batch_size) x num_actions.
     target_quantile_values_action = target_action.quantile_values
+    print('target_quantile_values_action:',target_quantile_values_action.shape,target_quantile_values_action)
     # Shape: num_quantile_samples x batch_size x num_actions.
     target_quantile_values_action = tf.reshape(target_quantile_values_action,
                                                [self.num_quantile_samples,
                                                 self._replay.batch_size,
                                                 self.num_actions])
+    print('target_quantile_values_action:',target_quantile_values_action.shape,target_quantile_values_action)
+
     # Shape: batch_size x num_actions.
     self._replay_next_target_q_values = tf.squeeze(tf.reduce_mean(
         target_next_quantile_values_action, axis=0))
+    print('self._replay_next_target_q_values :',self._replay_next_target_q_values.shape,self._replay_next_target_q_values )
+
+
     self._replay_target_q_values = tf.squeeze(tf.reduce_mean(
         target_quantile_values_action, axis=0))
+    print('self._replay_target_q_values:',self._replay_target_q_values.shape,self._replay_target_q_values)
 
     self._replay_next_qt_argmax = tf.argmax(
         self._replay_next_target_q_values, axis=1)
@@ -290,58 +301,79 @@ class MunchausenIQNAgent(rainbow_agent.RainbowAgent):
     Returns:
       An op calculating the target quantile return.
     """
+    print('_replay_next_target_q_values',self._replay_next_target_q_values.shape,self._replay_next_target_q_values)
     batch_size = tf.shape(self._replay.rewards)[0]
+    print('batch_size:',batch_size.shape,batch_size)
     ###### Munchausen-specific
     replay_action_one_hot = tf.one_hot(
         self._replay.actions, self.num_actions, 1., 0., name='action_one_hot')
+    print('replay_action_one_hot:',replay_action_one_hot.shape,replay_action_one_hot)
     # tau * ln pi_k+1 (s')
     replay_next_log_policy = utils.stable_scaled_log_softmax(
         self._replay_next_target_q_values, self.tau, axis=1)
+    print('replay_next_log_policy:',replay_next_log_policy.shape,replay_next_log_policy)
     # tau * ln pi_k+1(s)
+    print('_replay_target_q_values',self._replay_target_q_values.shape,self._replay_target_q_values)
+
     replay_log_policy = utils.stable_scaled_log_softmax(
         self._replay_target_q_values, self.tau, axis=1)
+    print('replay_log_policy:',replay_log_policy.shape,replay_log_policy)
     replay_next_policy = utils.stable_softmax(  # pi_k+1(s')
         self._replay_next_target_q_values, self.tau, axis=1)
+    print('replay_next_policy:',replay_next_policy.shape,replay_next_policy)
 
     tau_log_pi_a = tf.reduce_sum(  # ln pi_k+1(a|s)
         replay_log_policy * replay_action_one_hot, axis=1)
+    print('tau_log_pi_a:',tau_log_pi_a.shape,tau_log_pi_a)
 
     tau_log_pi_a = tf.clip_by_value(
         tau_log_pi_a, clip_value_min=self.clip_value_min, clip_value_max=0)
+    print('tau_log_pi_a:',tau_log_pi_a.shape,tau_log_pi_a)
 
     munchuasen_term = self.alpha * tau_log_pi_a
+    print('munchuasen_term:',munchuasen_term.shape,munchuasen_term)
     #########
 
     # Shape of rewards: (num_tau_prime_samples x batch_size) x 1.
     rewards = self._replay.rewards[:, None] + munchuasen_term[Ellipsis, None]
+    print('rewards:',rewards.shape,rewards)
     rewards = tf.tile(rewards, [self.num_tau_prime_samples, 1])
+    print('rewards:',rewards.shape,rewards)
 
     is_terminal_multiplier = 1. - tf.cast(self._replay.terminals, tf.float32)
+    print('is_terminal_multiplier:',is_terminal_multiplier.shape,is_terminal_multiplier)
     # Incorporate terminal state to discount factor.
     # size of gamma_with_terminal: (num_tau_prime_samples x batch_size) x 1.
     gamma_with_terminal = self.cumulative_gamma * is_terminal_multiplier
+    print('gamma_with_terminal:',gamma_with_terminal.shape,gamma_with_terminal)
     gamma_with_terminal = tf.tile(gamma_with_terminal[:, None],
                                   [self.num_tau_prime_samples, 1])
+    print('gamma_with_terminal:',gamma_with_terminal.shape,gamma_with_terminal)
 
     # shape: (batch_size * num_tau_prime_samples) x num_actions
     replay_next_policy_ = tf.tile(replay_next_policy,
                                   [self.num_tau_prime_samples, 1])
+    print('replay_next_policy_:',replay_next_policy_.shape,replay_next_policy_)
     replay_next_log_policy_ = tf.tile(replay_next_log_policy,
                                       [self.num_tau_prime_samples, 1])
+    print('replay_next_log_policy_:',replay_next_log_policy_.shape,replay_next_log_policy_)
 
     # shape: (batch_size * num_tau_prime_samples) x 1
     replay_quantile_values = tf.reshape(
         self._replay_net_target_quantile_values,
         [batch_size * self.num_tau_prime_samples, self.num_actions])
+    print('replay_quantile_values:',replay_quantile_values.shape,replay_quantile_values)
 
     # shape: (batch_size * num_tau_prime_samples) x num_actions
     weighted_logits = (
         replay_next_policy_ * (replay_quantile_values
                                - replay_next_log_policy_))
+    print('weighted_logits:',weighted_logits.shape,weighted_logits)
 
     # shape: (batch_size * num_tau_prime_samples) x 1
     target_quantile_values = tf.reduce_sum(weighted_logits, axis=1,
                                            keepdims=True)
+    print('target_quantile_values:',target_quantile_values.shape,target_quantile_values)
 
     return rewards + gamma_with_terminal * target_quantile_values
 
@@ -352,6 +384,7 @@ class MunchausenIQNAgent(rainbow_agent.RainbowAgent):
       train_op: An op performing one step of training from replay data.
     """
     batch_size = tf.shape(self._replay.rewards)[0]
+    print('batch_sizeRRRR:',batch_size.shape,batch_size)
 
     target_quantile_values = tf.stop_gradient(
         self._build_target_quantile_values_op())

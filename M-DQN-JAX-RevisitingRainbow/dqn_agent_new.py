@@ -74,11 +74,14 @@ def target_m_dqn(model, target_network, states, next_states, actions,rewards, te
   #Neurla Networks -> Target[Target] y Expected [Online]
   q_state_values = jax.vmap(target_network, in_axes=(0))(states).q_values
   q_state_values = jnp.squeeze(q_state_values)
-  replay_qt_max = jnp.argmax(q_state_values, axis=1).reshape(q_state_values.shape[0],1)
+  #replay_qt_max = jnp.argmax(q_state_values, axis=1).reshape(q_state_values.shape[0],1)
+  replay_qt_max = jnp.amax(q_state_values, axis=1).reshape(q_state_values.shape[0],1)
 
   next_q_values = jax.vmap(target_network, in_axes=(0))(next_states).q_values
   next_q_values = jnp.squeeze(next_q_values)
-  replay_next_qt_max = jnp.argmax(next_q_values, axis=1).reshape(next_q_values.shape[0],1)
+  #replay_next_qt_max = jnp.argmax(next_q_values, axis=1).reshape(next_q_values.shape[0],1)
+  replay_next_qt_max = jnp.amax(next_q_values, axis=1).reshape(next_q_values.shape[0],1)
+
 
   # Equa.1 [Johan]
   #A
