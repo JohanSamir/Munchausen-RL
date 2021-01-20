@@ -24,8 +24,6 @@ from __future__ import print_function
 
 import functools
 
-
-
 from dopamine.jax import networks
 from dopamine.jax.agents.dqn import dqn_agent
 from flax import nn
@@ -95,13 +93,11 @@ def target_quantile_values_fun(online_network, target_network,
   target_quantile_vals = (
       jax.vmap(lambda x, y: x[y])(next_state_target_outputs.quantile_values,
                                   next_qt_argmax))
-  print('target_quantile_vals:',target_quantile_vals.shape, target_quantile_vals)
+
   target_quantile_vals = rewards + gamma_with_terminal * target_quantile_vals
   # We return with an extra dimension, which is expected by train.
-  print('target_quantile_vals:',target_quantile_vals.shape, target_quantile_vals)
-  B = target_quantile_vals[:, None]
-  print('B:',B.shape, B)
-  return rng, jax.lax.stop_gradient(B)
+  
+  return rng, jax.lax.stop_gradient(target_quantile_vals[:, None])
 
 
 def stable_scaled_log_softmax(x, tau, axis=-1):
@@ -128,71 +124,38 @@ def munchau_target_quantile_values_fun(online_network, target_network,
   #Build the munchausen target for return values at given quantiles.
   
   rewards = jnp.tile(rewards, [num_tau_prime_samples])
-  print('rewards:',rewards.shape,rewards)
   is_terminal_multiplier = 1. - terminals.astype(jnp.float32)
-  print('is_terminal_multiplier:',is_terminal_multiplier.shape,is_terminal_multiplier)
   # Incorporate terminal state to discount factor.
   gamma_with_terminal = cumulative_gamma * is_terminal_multiplier
-  print('gamma_with_terminal:',gamma_with_terminal.shape,gamma_with_terminal)
   gamma_with_terminal = jnp.tile(gamma_with_terminal, [num_tau_prime_samples])
-  print('gamma_with_terminal:',gamma_with_terminal.shape,gamma_with_terminal)
   
   rng, rng1, rng2 = jax.random.split(rng, num=3)
-  #[states,1,1]
-  #print('states',states.shape)
-  print('num_actions:',num_actions)
   #------------------------------------------------------------------------
-  #[BatchSize,num_quantile_samples,actiones]
   target_next_action = target_network(next_states,num_quantiles=num_quantile_samples, rng=rng1)
-  print('target_next_action:',target_next_action)
-  #[num_quantile_samples,actions]
   target_next_quantile_values_action = target_next_action.quantile_values
-  print('target_next_quantile_values_action:',target_next_quantile_values_action.shape,target_next_quantile_values_action)
-    #BatchSize[actions]
   _replay_next_target_q_values = jnp.squeeze(jnp.mean(target_next_quantile_values_action, axis=0))
-  print('_replay_next_target_q_values:',_replay_next_target_q_values.shape)
 
-  #BatchSize[actions]
   outputs_action = target_network(states,num_quantiles=num_quantile_samples, rng=rng1)
   q_state_values = outputs_action.quantile_values
   _replay_target_q_values = jnp.squeeze(jnp.mean(q_state_values, axis=0))
-  print('_replay_target_q_values:',_replay_target_q_values.shape,_replay_target_q_values)
   #------------------------------------------------------------------------
 
   replay_action_one_hot = replay_action_one_hot = jax.nn.one_hot(actions,num_actions)
-  print('replay_action_one_hot:',replay_action_one_hot.shape,replay_action_one_hot)
   replay_next_log_policy = stable_scaled_log_softmax(_replay_next_target_q_values, tau, axis=0)
-  print('replay_next_log_policy:',replay_next_log_policy.shape,replay_next_log_policy)
   replay_next_policy =  stable_softmax(_replay_next_target_q_values,tau, axis=0)
-  print('replay_next_policy:',replay_next_policy.shape,replay_next_policy)
   replay_log_policy =  stable_scaled_log_softmax(_replay_target_q_values, tau, axis=0)
-  print('replay_log_policy:',replay_log_policy.shape,replay_log_policy)
 
   #------------------------------------------------------------------------
 
   tau_log_pi_a = jnp.sum(replay_log_policy * replay_action_one_hot, axis=0)
-  print('tau_log_pi_a:',tau_log_pi_a.shape,tau_log_pi_a)
-  #a_max=1
   tau_log_pi_a = jnp.clip(tau_log_pi_a, a_min=clip_value_min,a_max=1)
-  print('tau_log_pi_a:',tau_log_pi_a.shape,tau_log_pi_a)
   munchausen_term = alpha * tau_log_pi_a
-  print('munchausen_term:',munchausen_term.shape,munchausen_term)
   weighted_logits = (replay_next_policy * (target_next_quantile_values_action- replay_next_log_policy))
-  print('weighted_logits:',weighted_logits.shape,weighted_logits)
 
-  #target_quantile_values = jnp.sum(weighted_logits, axis=1, keepdims=True)
   target_quantile_values = jnp.sum(weighted_logits, axis=1)
-  print('target_quantile_values:',target_quantile_values.shape,target_quantile_values)
-  
-  A = rewards + gamma_with_terminal * target_quantile_values
-  print('A',A.shape,A)
+  target_quantile_values = rewards + gamma_with_terminal * target_quantile_values
 
-  B = A[:, None]
-  print('B:',B.shape, B)
-
-  #target_quantile_vals[:, None]
-
-  return rng, jax.lax.stop_gradient(B)
+  return rng, jax.lax.stop_gradient(target_quantile_values[:, None])
 
 
 @functools.partial(jax.jit, static_argnums=(7, 8, 9, 10, 11, 12,13,14,15,16,17))
@@ -341,6 +304,12 @@ class JaxImplicitQuantileAgentNew(dqn_agent.JaxDQNAgent):
                clip_value_min=-10,
                target_opt=0,
 
+               net_conf = None,
+               env = "CartPole",
+               hidden_layer=2, 
+               neurons=512,
+               noisy=False,
+
                observation_shape=dqn_agent.NATURE_DQN_OBSERVATION_SHAPE,
                observation_dtype=dqn_agent.NATURE_DQN_DTYPE,
                stack_size=dqn_agent.NATURE_DQN_STACK_SIZE,
@@ -411,6 +380,14 @@ class JaxImplicitQuantileAgentNew(dqn_agent.JaxDQNAgent):
       summary_writing_frequency: int, frequency with which summaries will be
         written. Lower values will result in slower training.
     """
+    
+
+    self._net_conf = net_conf
+    self._env = env
+    self._hidden_layer = hidden_layer
+    self._neurons=neurons 
+    self._noisy = noisy
+
     self._tau = tau
     self._alpha = alpha
     self._clip_value_min = clip_value_min
@@ -433,7 +410,13 @@ class JaxImplicitQuantileAgentNew(dqn_agent.JaxDQNAgent):
         observation_shape=observation_shape,
         observation_dtype=observation_dtype,
         stack_size=stack_size,
-        network=network.partial(quantile_embedding_dim=quantile_embedding_dim),
+        network=network.partial(num_actions=num_actions,
+                                net_conf=self._net_conf,
+                                env=self._env,
+                                hidden_layer=self._hidden_layer, 
+                                neurons=self._neurons,
+                                noisy=self._noisy,
+                                quantile_embedding_dim=quantile_embedding_dim),
         gamma=gamma,
         update_horizon=update_horizon,
         min_replay_history=min_replay_history,
