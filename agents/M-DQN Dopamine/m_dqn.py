@@ -120,13 +120,31 @@ class MunchausenDQNAgent(dqn_agent.DQNAgent):
     self._replay_target_net_outputs = self.target_convnet(self._replay.states)
     self._replay_next_target_net_outputs = self.target_convnet(self._replay.next_states)
 
+    print('self._net_outputs:',self._net_outputs)
+
     self._policy_logits = utils.stable_scaled_log_softmax(
         self._net_outputs.q_values, self.tau, axis=1) / self.tau
+
+    print('self._policy_logits:',self._policy_logits.shape,self._policy_logits)
 
     self._stochastic_action = tf.random.categorical(
         self._policy_logits,
         num_samples=1,
         dtype=tf.int32)[0][0]
+
+    self.A = tf.random.categorical(
+        self._policy_logits,
+        num_samples=1,
+        dtype=tf.int32)[0]
+
+    self.B = tf.random.categorical(
+        self._policy_logits,
+        num_samples=1,
+        dtype=tf.int32)
+
+    print('self._stochastic_action:',self._stochastic_action.shape,self._stochastic_action)
+    print('self.A:',self.A.shape,self.A)
+    print('self.B:',self.B.shape,self.B)
 
   def _build_target_q_op(self):
     """Build an op used as a target for the Q-value.

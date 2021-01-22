@@ -21,9 +21,9 @@ MunchausenIQNAgent.tf_device = '/cpu:*'  # use '/cpu:*' for non-GPU version
 #MunchausenIQNAgent.optimizer_type = 'adam'
 #MunchausenIQNAgent.optimizer_lr = 0.001
 
-MunchausenIQNAgent.tau = 0.03#0.03 # 1st 0.03 , 0.2, 0.6
-MunchausenIQNAgent.alpha = 0.9 # 1st 0.9 -> 1, 0.9
-MunchausenIQNAgent.clip_value_min = -1 # 1st -1 -> -10, -5
+MunchausenIQNAgent.tau =  0.03#100#0.03 # 1st 0.03 , 0.2, 0.6
+MunchausenIQNAgent.alpha = 0.9 #1 # 1st 0.9 -> 1, 0.9
+MunchausenIQNAgent.clip_value_min = -10#-1e3 # 1st -1 -> -10, -5
 #MunchausenDQNAgent.interact = 'greedy'
 
 dqn/tf.train.AdamOptimizer.learning_rate = 0.001
@@ -36,12 +36,12 @@ create_gym_environment.environment_name = 'CartPole'
 create_gym_environment.version = 'v0'
 TrainRunner.create_environment_fn = @gym_lib.create_gym_environment
 
-Runner.num_iterations = 40
+Runner.num_iterations = 30
 Runner.training_steps = 1000
 Runner.max_steps_per_episode = 200
 
 #WrappedReplayBuffer.replay_capacity = 50000
 #WrappedReplayBuffer.batch_size = 128
 
-WrappedPrioritizedReplayBuffer.replay_capacity = 1000000
-WrappedPrioritizedReplayBuffer.batch_size = 42
+WrappedPrioritizedReplayBuffer.replay_capacity = 50000
+WrappedPrioritizedReplayBuffer.batch_size = 128

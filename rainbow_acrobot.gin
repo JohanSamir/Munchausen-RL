@@ -1,0 +1,55 @@
+#https://www.tensorflow.org/agents/tutorials/9_c51_tutorial
+#Distributional Advantage Actor-Critic
+#A Comparative Analysis of Expected and Distributional Reinforcement Learning
+
+# Hyperparameters for a simple Rainbow-style Cartpole agent. The
+# hyperparameters chosen achieve reasonable performance.
+import dopamine.jax.agents.rainbow.rainbow_agent
+import dopamine.jax.agents.dqn.dqn_agent
+import dopamine.jax.networks
+import dopamine.discrete_domains.gym_lib
+import dopamine.discrete_domains.run_experiment
+import dopamine.replay_memory.prioritized_replay_buffer
+import networks_new
+
+JaxxRainbowAgent.observation_shape = %gym_lib.ACROBOT_OBSERVATION_SHAPE
+JaxxRainbowAgent.observation_dtype = %jax_networks.ACROBOT_OBSERVATION_DTYPE
+JaxxRainbowAgent.stack_size = %gym_lib.ACROBOT_STACK_SIZE
+JaxxRainbowAgent.network  = @networks_new.RainbowDQN
+JaxxRainbowAgent.num_atoms = 51 # Original 51 (161)
+JaxxRainbowAgent.vmax = 200. #->Original 10
+JaxxRainbowAgent.gamma = 0.99
+
+JaxxRainbowAgent.minatar = False
+JaxxRainbowAgent.env = "Acrobot"
+JaxxRainbowAgent.normalize_obs = True
+JaxxRainbowAgent.hidden_layer = 2
+JaxxRainbowAgent.neurons = 512
+
+JaxxRainbowAgent.double_dqn = False
+JaxxRainbowAgent.noisy = False
+JaxxRainbowAgent.dueling = False
+
+JaxxRainbowAgent.update_horizon = 3 # Rainbow
+JaxxRainbowAgent.min_replay_history = 500
+JaxxRainbowAgent.update_period = 2 #-> 4 # EStaba en 2
+JaxxRainbowAgent.target_update_period = 100
+JaxxRainbowAgent.epsilon_fn = @dqn_agent.identity_epsilon
+
+#JaxxRainbowAgent.replay_scheme = 'uniform' #C51
+JaxxRainbowAgent.replay_scheme = 'prioritized' #--> Original
+create_optimizer.learning_rate = 0.0001
+#create_optimizer.learning_rate = 0.09 #Original
+
+create_optimizer.eps = 0.0003125
+create_gym_environment.environment_name = 'Acrobot'
+create_gym_environment.version = 'v1'
+
+TrainRunner.create_environment_fn = @gym_lib.create_gym_environment
+#Runner.num_iterations = 500
+Runner.num_iterations = 30
+Runner.training_steps = 1000
+#Runner.evaluation_steps = 1000
+Runner.max_steps_per_episode = 500  # Default max episode length.
+OutOfGraphPrioritizedReplayBuffer.replay_capacity = 50000
+OutOfGraphPrioritizedReplayBuffer.batch_size = 128

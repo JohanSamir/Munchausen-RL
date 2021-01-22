@@ -19,10 +19,10 @@ MunchausenDQNAgent.tf_device = '/cpu:*'  # use '/cpu:*' for non-GPU version
 MunchausenDQNAgent.optimizer_type = 'adam'
 MunchausenDQNAgent.optimizer_lr = 0.001
 
-MunchausenDQNAgent.tau = 0.2 # 0.03  # Original 0.03
-MunchausenDQNAgent.alpha = 0.9 # 1 Best #0.9 #0.4 # Original 0.9 
-MunchausenDQNAgent.clip_value_min = -1 # -10 Best #-1 #-1 # Original-1
-MunchausenDQNAgent.interact = 'greedy'
+MunchausenDQNAgent.tau = 100#0.2 # 0.03  # Original 0.03
+MunchausenDQNAgent.alpha = 1#0.9 # 1 Best #0.9 #0.4 # Original 0.9 
+MunchausenDQNAgent.clip_value_min = -1e3#-1 # -10 Best #-1 #-1 # Original-1
+MunchausenDQNAgent.interact = 'stochastic'#'stochastic'#'greedy'
 
 dqn/tf.train.AdamOptimizer.learning_rate = 0.001
 dqn/tf.train.AdamOptimizer.epsilon = 0.0003125

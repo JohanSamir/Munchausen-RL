@@ -46,7 +46,7 @@ class MunchausenIQNAgent(rainbow_agent.RainbowAgent):
                alpha=0.9,
                tau=0.03,
                clip_value_min=-1,
-               interact='greedy',
+               interact='stochastic',
                replay_scheme='uniform',
                num_tau_samples=32,
                num_tau_prime_samples=32,
@@ -225,11 +225,8 @@ class MunchausenIQNAgent(rainbow_agent.RainbowAgent):
 
     # Compute the Q-values which are used for action selection in the current
     # state.
-
-    print('self.state_ph:',self.state_ph,self.state_ph.shape)
     self._net_outputs = self.online_convnet(self.state_ph,
                                             self.num_quantile_samples)
-    print('self._net_outputs:',self._net_outputs)
     # Shape of self._net_outputs.quantile_values:
     # num_quantile_samples x num_actions.
     # e.g. if num_actions is 2, it might look something like this:
@@ -237,16 +234,12 @@ class MunchausenIQNAgent(rainbow_agent.RainbowAgent):
     #    [[0.1, 0.5],         [0.15, -0.3],          [0.15, -0.2]]
     # Q-values = [(0.1 + 0.15 + 0.15)/3, (0.5 + 0.15 + -0.2)/3].
     self._q_values = tf.reduce_mean(self._net_outputs.quantile_values, axis=0)
-    print('self._q_values:',self._q_values,self._q_values.shape)
     self._q_argmax = tf.argmax(self._q_values, axis=0)
     self._policy_logits = tf.nn.softmax(self._q_values / self.tau, axis=0)
-    print('self._policy_logits:',self._policy_logits,self._policy_logits.shape)
     self._stochastic_action = tf.random.categorical(
         self._policy_logits[None, Ellipsis],
         num_samples=1,
         dtype=tf.int32)[0][0]
-
-    print('self._stochastic_action:',self._stochastic_action,self._stochastic_action.shape)
 
     self._replay_net_outputs = self.online_convnet(self._replay.states,
                                                    self.num_tau_samples)
